@@ -24,7 +24,7 @@ print(f"DATA_DIR from config: {DATA_DIR}")
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--subject", type=str, required=True)
-	parser.add_argument("--feature", type=str, required=True)
+	parser.add_argument("--feature", type=str, required=False)
 	parser.add_argument("--x", type=int)
 	parser.add_argument("--k", type=float)
 	parser.add_argument("--sessions", nargs='+', type=int, default=[1, 2, 3, 4, 5])
@@ -68,46 +68,6 @@ if __name__ == "__main__":
 
 	allstories.remove("adollshouse")
 	train_stories.remove("adollshouse")
-
-	def get_save_location(SAVE_DIR, feature, numeric_mod, subject):
-		save_location = join(SAVE_DIR, "results", feature + "_" + numeric_mod, subject)
-		os.makedirs(save_location, exist_ok=True)
-	
-	numeric_mod = ""
-	if x is not None:
-		numeric_mod += str(x) + "x"
-		if k is not None:
-			numeric_mod += "_" + str(k) + "k"
-	
-	if x is None and k is not None:
-		numeric_mod += str(k) + "k"
-	
-	save_location = get_save_location(SAVE_DIR, feature, numeric_mod, subject)
-
-	print("Saving encoding model & results to:", save_location)
-	sys.stdout.flush()
-	os.makedirs(save_location, exist_ok=True)
-
-	downsampled_feat = get_feature_space(feature, allstories, x, k)
-	print("Stimulus & Response parameters:")
-	print("trim: %d, ndelays: %d" % (trim, ndelays))
-
-	save_dir = get_save_location(SAVE_DIR, feature, numeric_mod, "emb")
-
-	save_file = os.path.join(save_dir, 'vecs.pkl')
-
-	# Create the directory if it doesn't exist
-	os.makedirs(save_dir, exist_ok=True)
-
-	# Dump the downsampled feature into the pickle file
-	with open(save_file, 'wb') as f:
-		pickle.dump(downsampled_feat, f)
-
-	# Delayed stimulus
-	delRstim = apply_zscore_and_hrf(train_stories, downsampled_feat, trim, ndelays)
-	print("delRstim: ", delRstim.shape)
-	delPstim = apply_zscore_and_hrf(test_stories, downsampled_feat, trim, ndelays)
-	print("delPstim: ", delPstim.shape)
 
 	for story in allstories:
 		stories = [story]

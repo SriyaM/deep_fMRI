@@ -11,17 +11,14 @@ from ridge_utils.interpdata import lanczosinterp2D
 from ridge_utils.SemanticModel import SemanticModel
 from ridge_utils.dsutils import *
 from ridge_utils.stimulus_utils import load_textgrids, load_simulated_trfiles
-from ridge_utils.stimulus_utils import load_textgrids, load_simulated_trfiles
 
 from config import REPO_DIR, EM_DATA_DIR, DATA_DIR, SAVE_DIR
 
 import torch
-from transformers import BertTokenizer, BertModel, GPT2Tokenizer, GPT2LMHeadModel, BertForMaskedLM, LlamaTokenizer, LlamaForCausalLM, AutoTokenizer, AutoModel
-from sentence_transformers import SentenceTransformer
 from sklearn.decomposition import PCA, IncrementalPCA
 
-# NEED TO CHANGE THE PATH OF THIS TO EUNJIS FILE
 from mech_lm.experiments.inference_neuro import setup_model, generate_embeddings
+
 
 def get_save_location(SAVE_DIR, feature, numeric_mod, subject):
 	save_location = join(SAVE_DIR, "results", feature + "_" + numeric_mod, subject)
@@ -66,52 +63,67 @@ def downsample_word_vectors(stories, word_vectors, wordseqs):
 ########## ENG1000 Features ##########
 ######################################
 
-def get_eng1000_vectors(allstories, x, k):
-	"""Get Eng1000 vectors (985-d) for specified stories.
+def get_eng1000_vectors(allstories, x, k, subject):
+    """Generate 985-dimensional ENG1000 vectors for the specified stories.
 
-	Args:
-		allstories: List of stories to obtain vectors for.
+    Args:
+        allstories: List of stories to obtain vectors for.
+        x: Placeholder for future arguments.
+        k: Placeholder for top percentage of vectors to keep.
+        subject: Subject identifier.
 
-	Returns:
-		Dictionary of {story: downsampled vectors}
-	"""
-	eng1000 = SemanticModel.load(join(EM_DATA_DIR, "english1000sm.hf5"))
-	wordseqs = get_story_wordseqs(allstories)
-	vectors = {}
+    Returns:
+        Dictionary of {story: downsampled word vectors}
+    """
+    eng1000 = SemanticModel.load(join(EM_DATA_DIR, "english1000sm.hf5"))
+    wordseqs = get_story_wordseqs(allstories)
+    vectors = {}
 
-	# for each story, create embeddings using the wordseqs
-	for story in allstories:
-		sm = make_semantic_model(wordseqs[story], [eng1000], [985])
-		vectors[story] = sm.data
-	
-	for story in allstories:
-		print("LENGTHS", "time", story, len(wordseqs[story].data), len(wordseqs[story].data_times), len(vectors[story]), len(wordseqs[story].split_inds))
-	return downsample_word_vectors(allstories, vectors, wordseqs)
+    # Generate embeddings for each story using the word sequences
+    for story in allstories:
+        sm = make_semantic_model(wordseqs[story], [eng1000], [985])
+        vectors[story] = sm.data
+    
+    return downsample_word_vectors(allstories, vectors, wordseqs)
 
 ######################################
 ########## Llama Features ############
 ######################################
 
-def get_llama_vectors(allstories, x, k):
-	"""Get llama vectors (300-d) for specified stories.
+def get_llama_vectors(allstories, x, k, subject):
+    """Generate Llama vectors for the specified stories.
+
+    Args:
+        allstories: List of stories to obtain vectors for.
+        x: Placeholder for future arguments.
+        k: Placeholder for top percentage of vectors to keep.
+        subject: Subject identifier.
+
+    Returns:
+        Dictionary of {story: downsampled word vectors}
+    """
+    wordseqs = get_story_wordseqs(allstories)
+    vectors = {}
+    
+    # Generate last token embeddings for each story's words
+    for story in allstories:
+        word_vectors = get_last_token_embedding((wordseqs[story]).data, k)
+        vectors[story] = word_vectors
+    return downsample_word_vectors(allstories, vectors, wordseqs)
+
+def get_last_token_embedding(words, window_size, model, tokenizer, batch_size=64):
+	"""Generate last token embeddings for each word in the provided list of words using the model.
 
 	Args:
-		allstories: List of stories to obtain vectors for.
+		words: List of words to generate embeddings for.
+		window_size: Size of the context window for each word.
+		model: Pre-trained model to use for generating embeddings.
+		tokenizer: Tokenizer corresponding to the model.
+		batch_size: Number of words to process in a single batch.
 
 	Returns:
-		Dictionary of {story: downsampled vectors}
+		NumPy array of embeddings corresponding to each word.
 	"""
-	wordseqs = get_story_wordseqs(allstories)
-	vectors = {}
-	# for each story, create embeddings using the wordseqs
-	for story in allstories:
-		word_vectors = get_last_token_embedding((wordseqs[story]).data, k)
-		vectors[story] = word_vectors
-	return downsample_word_vectors(allstories, vectors, wordseqs)
-
-def get_last_token_embedding(words, window_size, model, tokenizer,  batch_size=64):
-
-	# Check if ROCm is available and move model to GPU
 	if torch.cuda.is_available():  # ROCm uses the same torch.cuda API
 		device = torch.device('cuda')
 		print(f"Using GPU: {torch.cuda.get_device_name(0)}")
@@ -223,22 +235,25 @@ def get_last_token_embedding(words, window_size, model, tokenizer,  batch_size=6
 ##########################################################
 ########## Infinigram Features with induction ############
 ##########################################################
-
-def get_pca_tr_infini_general(allstories, x, k, vec_location_suffix, model_type, tokenizer, model_checkpoint, batch_size=64):
-	"""Get Eng1000 vectors (985-d) for specified stories.
+def get_pca_tr_infini_general(allstories, x, k, subject, vec_location_suffix, model_type, tokenizer, model_checkpoint, batch_size=64):
+	"""Generate PCA-transformed vectors with infini-gram models for the specified stories.
 
 	Args:
 		allstories: List of stories to obtain vectors for.
-		x: Integer value to determine the embedding path.
-		k: Top percent of vectors to keep.
-		vec_location_suffix: The suffix to append to the vector location for different data variations.
+		x: Dimensionality for PCA transformation.
+		k: Top percentage of vectors to keep.
+		vec_location_suffix: Suffix for the vector save location.
+		model_type: Type of infinigram model to use for induction matching.
+		tokenizer: Tokenizer for the infinigram model.
+		model_checkpoint: Checkpoint for the infinigram model.
+		batch_size: Batch size for processing embeddings.
 
 	Returns:
-		Dictionary of {story: downsampled vectors}
+		Dictionary of {story: PCA-transformed vectors}
 	"""
 	wordseqs = get_story_wordseqs(allstories)
 	vectors = {}
-	save_location = get_save_location(SAVE_DIR, vec_location_suffix, "", "UTS03")
+	save_location = get_save_location(SAVE_DIR, vec_location_suffix, "", subject)
 
 	if "llama" in model_checkpoint:
 		base_checkpoint = "llama2"
@@ -319,44 +334,40 @@ def get_pca_tr_infini_general(allstories, x, k, vec_location_suffix, model_type,
 	return new_features
 
 
-def get_pca_tr_infini(allstories, x, k):
-    """Calls the general PCA TR function with infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "infinigram", 'infini-gram', "gpt2", "hf_openwebtext_gpt2")
+def get_pca_tr_infini(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "infinigram", 'infini-gram', "gpt2", "hf_openwebtext_gpt2")
 
-def get_pca_tr_infini_w_cont(allstories, x, k):
-    """Calls the general PCA TR function with infinigram_w_cont vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "infinigram_w_cont", 'infini-gram-w-incontext', "gpt2", "hf_openwebtext_gpt2")
+def get_pca_tr_infini_w_cont(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "infinigram_w_cont", 'infini-gram-w-incontext', "gpt2", "hf_openwebtext_gpt2")
 
-def get_pca_tr_incont_infini(allstories, x, k):
-    """Calls the general PCA TR function with incont_infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "incont_infinigram", 'incontext-infini-gram', "gpt2", "hf_openwebtext_gpt2")
+def get_pca_tr_incont_infini(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "incont_infinigram", 'incontext-infini-gram', "gpt2", "hf_openwebtext_gpt2")
 
-def get_pca_tr_incont_fuzzy_gpt(allstories, x, k):
-    """Calls the general PCA TR function with incont_infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "incont_fuzzy_gpt", 'incontext-fuzzy', "gpt2", "hf_openwebtext_gpt2")
+def get_pca_tr_incont_fuzzy_gpt(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "incont_fuzzy_gpt", 'incontext-fuzzy', "gpt2", "hf_openwebtext_gpt2")
 
-def get_pca_tr_incont_fuzzy_llama(allstories, x, k):
-    """Calls the general PCA TR function with incont_infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "incont_fuzzy_llama", 'incontext-fuzzy', "llama2", "hf_openwebtext_llama")
+def get_pca_tr_incont_fuzzy_llama(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "incont_fuzzy_llama", 'incontext-fuzzy', "llama2", "hf_openwebtext_llama")
 
-def get_pca_tr_incont_dist_gpt(allstories, x, k):
-    """Calls the general PCA TR function with incont_infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "incont_fuzzy_gpt", 'incontext-fuzzy', "gpt2_dist", "hf_openwebtext_gpt2")
+def get_pca_tr_incont_dist_gpt(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "incont_fuzzy_gpt", 'incontext-fuzzy', "gpt2_dist", "hf_openwebtext_gpt2")
 
-def get_pca_tr_incont_dist_llama(allstories, x, k):
-    """Calls the general PCA TR function with incont_infinigram vectors."""
-    return get_pca_tr_infini_general(allstories, x, k, "incont_fuzzy_llama", 'incontext-fuzzy', "llama2_dist", "hf_openwebtext_llama")
+def get_pca_tr_incont_dist_llama(allstories, x, k, subject):
+    return get_pca_tr_infini_general(allstories, x, k, subject, "incont_fuzzy_llama", 'incontext-fuzzy', "llama2_dist", "hf_openwebtext_llama")
 
 
-def get_pca_tr_random(allstories, x, k):
-	"""Get Eng1000 vectors (985-d) for specified stories.
+def get_pca_tr_random(allstories, x, k, subject):
+	"""Generate PCA-transformed vectors using random induction for the specified stories.
 
-	Args:
-		allstories: List of stories to obtain vectors for.
+    Args:
+        allstories: List of stories to obtain vectors for.
+        x: The number of principal components (not used in this function).
+        k: Top percentage of words to consider for matches.
+        subject: Test subject.
 
-	Returns:
-		Dictionary of {story: downsampled vectors}
-	"""
+    Returns:
+        Dictionary of {story: downsampled vectors}
+    """
 	wordseqs = get_story_wordseqs(allstories)
 	eng1000 = SemanticModel.load(join(EM_DATA_DIR, "english1000sm.hf5"))
 	top_percent = k
@@ -387,15 +398,18 @@ def get_pca_tr_random(allstories, x, k):
 
 	return new_features
 
-def get_pca_tr_exact(allstories, x, k):
-	"""Get Eng1000 vectors (985-d) for specified stories.
+def get_pca_tr_exact(allstories, x, k, subject):
+	"""Generate PCA-transformed vectors using exact induction for the specified stories.
 
-	Args:
-		allstories: List of stories to obtain vectors for.
+    Args:
+        allstories: List of stories to obtain vectors for.
+        x: The number of principal components (not used in this function).
+        k: Top percentage of words to consider for matches.
+        subject: Subject identifier.
 
-	Returns:
-		Dictionary of {story: downsampled vectors}
-	"""
+    Returns:
+        Dictionary of {story: downsampled vectors}
+    """
 	wordseqs = get_story_wordseqs(allstories)
 	eng1000 = SemanticModel.load(join(EM_DATA_DIR, "english1000sm.hf5"))
 	top_percent = k
@@ -432,16 +446,14 @@ def get_pca_tr_exact(allstories, x, k):
 
 _FEATURE_CONFIG = {
 	"eng1000": get_eng1000_vectors,
-	"llama_16_words": get_llama_vectors,
-	"pca_tr_infini" : get_pca_tr_infini,
-	"pca_tr_infini_w_cont" : get_pca_tr_infini_w_cont,
-	"pca_tr_incont_infini" : get_pca_tr_incont_infini,
-	"pca_tr_incont_dist_gpt" : get_pca_tr_incont_dist_gpt,
-	"pca_tr_incont_dist_llama" : get_pca_tr_incont_dist_llama,
-	"pca_tr_incont_fuzzy_gpt" : get_pca_tr_incont_fuzzy_gpt,
-	"pca_tr_incont_fuzzy_llama" : get_pca_tr_incont_fuzzy_llama,
-	"pca_tr_random" : get_pca_tr_random,
-	"pca_tr_exact" : get_pca_tr_exact,
+	"llama": get_llama_vectors,
+	"incontext_infinigram" : get_pca_tr_incont_infini,
+	"incontext_infinigram_dist_gpt" : get_pca_tr_incont_dist_gpt,
+	"incontext_infinigram_dist_llama" : get_pca_tr_incont_dist_llama,
+	"incontext_infinigram_fuzzy_gpt" : get_pca_tr_incont_fuzzy_gpt,
+	"incontext_infinigram_fuzzy_llama" : get_pca_tr_incont_fuzzy_llama,
+	"incontext_infinigram_random" : get_pca_tr_random,
+	"incontext_infinigram_exact" : get_pca_tr_exact,
 }
 
 def get_feature_space(feature, *args):
