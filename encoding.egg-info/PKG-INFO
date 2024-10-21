@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: encoding
+Version: 0.1.0
+Summary: Code for fitting fMRI encoding
+Author: Amanda LeBel
+Author-email: amanda_lebel@berkeley.edu
+License: BSD license
+Classifier: Development Status :: 2 - Pre-Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python
+License-File: LICENSE
