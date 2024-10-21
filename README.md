@@ -46,11 +46,12 @@ To run any of the Induction-Gram experiments on a given subject you must first r
 $ python encoding/encoding_save_presp.py --subject UTS03
 ```
 
-Then, to fit any encoding model (`incontext_infinigram`) for one subject (`UTS03`) and test it on held-out data:
+Then, to fit any encoding model (`incontext_infinigram`) for one subject (`UTS03`) and test it on held-out data by using the top 900 principle components of the response vectors and the top 80% of matches for induction, you can run:
 
 ```
-$ python encoding/encoding.py --subject UTS03 --feature incontext_infinigram
+$ python encoding/encoding.py --subject UTS03 --feature incontext_infinigram --x 900  --k 0.8
 ```
+For the eng1000 feature, the x and k parameters are needed. For the llama feature, k specifies the context window size. For all infinigram-based induction features, x represents the number of principal components to compress the infinigram vectors, and k represents the top k proportion of words to consider for induction matches. Refer to feature_spaces.py for more details.
 
 The other optional parameters that encoding.py takes such as sessions, ndelays, single_alpha allow the user to change the amount of data and regularization aspects of the linear regression used. 
 
