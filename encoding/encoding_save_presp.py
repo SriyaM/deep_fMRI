@@ -42,7 +42,6 @@ if __name__ == "__main__":
 	globals().update(args.__dict__)
 
 	fs = " ".join(_FEATURE_CONFIG.keys())
-	assert feature in _FEATURE_CONFIG.keys(), "Available feature spaces:" + fs
 	assert np.amax(sessions) <= 5 and np.amin(sessions) >=1, "1 <= session <= 5"
 
 	sessions = list(map(str, sessions))
